@@ -109,6 +109,7 @@ extern void yyerror(const char*);
    t_list *list;
    t_axe_label *label;
    t_while_statement while_stmt;
+   t_repeat_exp_statement rep_exp;
 } 
 /*=========================================================================
                                TOKENS 
@@ -133,6 +134,7 @@ extern void yyerror(const char*);
 %token <intval> TYPE
 %token <svalue> IDENTIFIER
 %token <intval> NUMBER
+%token <rep_exp> REPEAT_EXP
 
 %type <expr> exp
 %type <decl> declaration
@@ -248,7 +250,68 @@ statement   : assign_statement SEMI      { /* does nothing */ }
             | control_statement          { /* does nothing */ }
             | read_write_statement SEMI  { /* does nothing */ }
             | SEMI            { gen_nop_instruction(program); }
+            | repeat_exp_statement SEMI
 ;
+
+repeat_exp_statement: REPEAT_EXP LPAR IDENTIFIER ASSIGN exp COMMA exp COMMA 
+   {
+      // Generate the assignment of <exp. 1> to the variable.
+      int r_var = get_symbol_location(program, $3, 0);
+      if ($5.expression_type == REGISTER) {
+         gen_addi_instruction(program, r_var, $5.value, 0);
+      } else {
+         gen_addi_instruction(program, r_var, REG_0, $5.value);
+      }
+
+      // Reserve a new register which will be used as a loop counter, and
+      // generate the code which initializes the loop counter with
+      // the value of <exp. 2>.
+      // The loop counter will be decremented at every iteration.
+      $1.r_i = getNewRegister(program);
+      if ($7.expression_type == REGISTER) {
+         gen_addi_instruction(program, $1.r_i, $7.value, 0);
+      } else {
+         gen_addi_instruction(program, $1.r_i, REG_0, $7.value);
+      }
+
+      // Generate the label for the back-edge of the loop
+      $1.l_loop = assignNewLabel(program);
+      // Generate the code for testing if the loop counter is <= 0 and exit the
+      // loop in that case
+      gen_subi_instruction(program, REG_0, $1.r_i, 0);
+      $1.l_exit = newLabel(program);
+      gen_ble_instruction(program, $1.l_exit, 0);
+      // At this point the rule for `exp` will generate some code which computes
+      // the value of <exp. 3>. If <exp. 3> is constant, no code is generated,
+      // and the same value will be assigned multiple times to the variable,
+      // which of course is inefficient.
+      //   However, the text of the exercise didn't ask us to police the code
+      // we are compiling, so we shall *not* stop compilation in this situation.
+      // At most we could emit a warning, but *not* an error!
+   }
+   exp RPAR
+   {
+      // Generate code which will assign the value of <exp. 3> of the variable
+      // at each loop iteration.
+      int r_var = get_symbol_location(program, $3, 0);
+      if ($10.expression_type == REGISTER) {
+         gen_addi_instruction(program, r_var, $10.value, 0);
+      } else {
+         gen_addi_instruction(program, r_var, REG_0, $10.value);
+      }
+
+      // Generate code to decrement the loop counter and jump back at the head
+      // of the loop
+      gen_subi_instruction(program, $1.r_i, $1.r_i, 1);
+      gen_bt_instruction(program, $1.l_loop, 0);
+      // Generate the label which points just after the loop for exiting it.
+      assignLabel(program, $1.l_exit);
+
+      // Free the identifier
+      free($3);
+   }
+;
+
 
 control_statement : if_statement         { /* does nothing */ }
             | while_statement            { /* does nothing */ }

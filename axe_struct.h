@@ -110,6 +110,17 @@ typedef struct t_while_statement
                                     * that follows the while construct */
 } t_while_statement;
 
+// Note that instead of defining a new semantic type in the union declaration,
+// we could have used global variables as the repeat_exp statement structurally
+// cannot be nested (being a statement, it cannot appear inside one of the
+// expressions!)
+typedef struct t_repeat_exp_statement
+{
+   int r_i;
+   t_axe_label *l_loop;
+   t_axe_label *l_exit;
+} t_repeat_exp_statement;
+
 /* create a label */
 extern t_axe_label *alloc_label(int value);
 
